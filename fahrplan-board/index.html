@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fahrplan Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: one column, top to bottom = drivers, plan, live board, all timetables. Single dark look. */
+  :root{
+    color-scheme:dark;
+    --bg:#0b0f14; --panel:#141a22; --panel-2:#101620; --edge:#232c38;
+    --city:#ffb703; --nymph:#4cc9c0; --schwabing:#ef6461; --sonder:#c77dff;
+    --text:#eef2f6; --muted:#7c8896; --muted-2:#4d5866; --ok:#6bd38a; --warn:#ffb703;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding-block:24px 90px; color:var(--text);
+    padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px));
+    font-family:'Inter',system-ui,sans-serif;
+    background:radial-gradient(1100px 520px at 15% -10%,#131b26,transparent 60%),var(--bg);
+  }
+  .wrap{max-width:1000px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--city);box-shadow:0 0 10px var(--city);animation:pulse 2.2s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0}
+  .clock{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:600;background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:6px 14px}
+  .clock span{font-size:13px;color:var(--muted);margin-left:8px}
+
+  section{background:var(--panel);border:1px solid var(--edge);border-radius:14px;margin-bottom:18px;overflow:hidden}
+  .sec-head{padding:16px 20px;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(180deg,#171f2a,#131a23)}
+  .sec-head h2{font-family:'Space Grotesk',sans-serif;font-size:14px;letter-spacing:.08em;text-transform:uppercase;margin:0}
+  .sec-head .step{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--bg);background:var(--city);border-radius:4px;padding:2px 7px}
+  .sec-head .hint{color:var(--muted);font-size:12px;margin-left:auto}
+  .body{padding:18px 20px}
+
+  /* drivers */
+  .chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .chip{position:relative;display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--panel-2);border:1px solid var(--edge);border-radius:9px;cursor:pointer;user-select:none;transition:border-color .15s,background .15s}
+  .chip:hover{border-color:var(--muted-2)}
+  .chip input{accent-color:var(--city);width:16px;height:16px;margin:0}
+  .chip.on{border-color:var(--city);background:rgba(255,183,3,.07)}
+  .chip .nm{font-size:14px;font-weight:500;flex:1}
+  .chip .del{background:none;border:0;color:var(--muted-2);cursor:pointer;font-size:15px;padding:0 2px}
+  .chip .del:hover{color:var(--schwabing)}
+  .addrow{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .count{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--muted);margin-left:auto}
+  .count b{color:var(--text)}
+
+  input[type=text],select{background:var(--panel-2);border:1px solid var(--edge);color:var(--text);font:14px 'Inter',sans-serif;padding:9px 10px;border-radius:7px;outline:none}
+  input[type=text]:focus,select:focus{border-color:var(--city)}
+  button.btn{background:var(--panel-2);border:1px solid var(--edge);color:var(--text);padding:9px 14px;border-radius:7px;font:500 13px 'Inter',system-ui,sans-serif;cursor:pointer}
+  button.btn:hover{border-color:var(--muted-2)}
+  button.btn.primary{background:var(--city);border-color:var(--city);color:#1a1300}
+  label.lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+  .plan-select{min-width:min(300px,100%)}
+  .status{font-size:13px;padding:8px 12px;border-radius:7px;border:1px solid var(--edge);background:var(--panel-2)}
+  .status.ok{color:var(--ok);border-color:rgba(107,211,138,.4)}
+  .status.warn{color:var(--warn);border-color:rgba(255,183,3,.4)}
+  .assign{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+  .slot-label{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .slot-num{width:18px;height:18px;border-radius:4px;background:var(--panel-2);border:1px solid var(--edge);display:inline-flex;align-items:center;justify-content:center;font-size:10px}
+  .assign select{width:100%}
+
+  /* board */
+  .sonder-banner{padding:11px 20px;background:linear-gradient(90deg,rgba(199,125,255,.15),transparent);border-bottom:1px solid var(--edge);color:var(--sonder);font:13px 'IBM Plex Mono',monospace}
+  .lines{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--edge)}
+  @media(max-width:720px){.lines{grid-template-columns:1fr}}
+  .line-col{background:var(--panel-2);padding:16px 18px 20px}
+  .line-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;font:700 13px 'Space Grotesk',system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+  .chipc{width:9px;height:9px;border-radius:2px}
+  .city .chipc,.chipc.city{background:var(--city)} .chipc.nymph{background:var(--nymph)} .chipc.schwabing{background:var(--schwabing)}
+  .flap{background:#0d131b;border:1px solid var(--edge);border-radius:9px;padding:14px;min-height:84px;display:flex;flex-direction:column;justify-content:center}
+  .flap .s{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted-2);margin-bottom:6px}
+  .flap .d{font:600 21px 'IBM Plex Mono',monospace}
+  .flap .d.idle{color:var(--muted-2);font-size:14px;font-weight:400}
+  .flap .u{font:11px 'IBM Plex Mono',ui-monospace,monospace;color:var(--muted);margin-top:6px}
+  .next h3{font:700 13px 'Space Grotesk',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+  .nrow{display:grid;grid-template-columns:34px 64px 110px 1fr;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border-left:3px solid var(--muted-2);background:var(--panel-2);margin-bottom:7px}
+  .nrow.city{border-left-color:var(--city)} .nrow.nymph{border-left-color:var(--nymph)} .nrow.schwabing{border-left-color:var(--schwabing)} .nrow.sonder{border-left-color:var(--sonder)}
+  .nrow .i{font:12px 'IBM Plex Mono',ui-monospace,monospace;color:var(--muted-2)} .nrow .t{font:600 15px 'IBM Plex Mono',ui-monospace,monospace}
+  .nrow .l{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)} .nrow .dr{font:14px 'IBM Plex Mono',ui-monospace,monospace;text-align:right}
+  .empty{color:var(--muted);font:13px 'IBM Plex Mono',ui-monospace,monospace}
+
+  /* schedules */
+  details.plan{border:1px solid var(--edge);border-radius:10px;margin-bottom:10px;background:var(--panel-2)}
+  details.plan>summary{cursor:pointer;padding:13px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;font:600 14px 'Inter',system-ui,sans-serif;list-style:none}
+  details.plan>summary::-webkit-details-marker{display:none}
+  details.plan>summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+  details.plan[open]>summary::before{transform:rotate(90deg)}
+  .tag{font:11px 'IBM Plex Mono',ui-monospace,monospace;padding:2px 7px;border-radius:4px;background:var(--panel);border:1px solid var(--edge);color:var(--muted)}
+  .tag.sel{color:var(--city);border-color:var(--city)}
+  .rbtn{margin-left:auto}
+  .seg{display:flex}
+  .seg .btn{border-radius:0}
+  .seg .btn:first-child{border-radius:7px 0 0 7px}
+  .seg .btn:last-child{border-radius:0 7px 7px 0;border-left:0}
+  .seg .btn.on{background:var(--city);border-color:var(--city);color:#1a1300;font-weight:600}
+  .pedit{flex:1;min-width:120px;max-width:260px;padding:6px 8px}
+  .tablewrap{overflow-x:auto;padding:0 16px 16px}
+  table{border-collapse:collapse;width:100%;font:13px 'IBM Plex Mono',monospace;min-width:480px}
+  th,td{padding:7px 10px;border-bottom:1px solid var(--edge);text-align:left}
+  th{font:700 11px 'Space Grotesk',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  td.time{color:var(--muted)} td.c{color:var(--city)} td.n{color:var(--nymph)} td.s{color:var(--schwabing)} td.x{color:var(--sonder)}
+  footer{text-align:center;color:var(--muted-2);font:11px 'IBM Plex Mono',ui-monospace,monospace;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand"><span class="dot"></span><h1>Fahrplan Board</h1></div>
+    <div class="clock" id="clock">--:--:--</div>
+  </header>
+
+  <!-- 1. DRIVERS (front page) -->
+  <section>
+    <div class="sec-head">
+      <span class="step">1</span><h2>Drivers</h2>
+      <span class="hint">Tick everyone who is working today</span>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="body">
+      <div class="chips" id="chips"></div>
+      <div class="addrow">
+        <input type="text" id="newName" placeholder="Add a new driver name…" maxlength="30">
+        <button class="btn" id="addBtn" type="button">Add driver</button>
+        <button class="btn" id="clearBtn" type="button">Clear selection</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. PLAN -->
+  <section>
+    <div class="sec-head"><span class="step">2</span><h2>Plan for today</h2></div>
+    <div class="body">
+      <div class="row">
+        <div>
+          <label class="lbl">Season</label>
+          <div class="seg"><button type="button" class="btn" data-s="summer">Summer</button><button type="button" class="btn" data-s="winter">Winter</button></div>
+        </div>
+        <div>
+          <label class="lbl" for="planSelect">Choose plan</label>
+          <select id="planSelect" class="plan-select"></select>
+        </div>
+        <div class="status" id="status"></div>
+        <button class="btn primary" id="autoBtn" type="button">Auto-fill slots in tick order</button>
+      </div>
+      <label class="lbl">Who is slot 1, 2, 3 … on this plan</label>
+      <div class="assign" id="assign"></div>
+    </div>
+  </section>
+
+  <!-- 3. LIVE BOARD -->
+  <section>
+    <div class="sec-head"><span class="step">3</span><h2>Live board</h2><span class="hint" id="planLabel"></span></div>
+    <div id="sonderWrap"></div>
+    <div class="lines">
+      <div class="line-col"><div class="line-head"><span class="chipc city"></span>City</div><div class="flap" id="flap-city"></div></div>
+      <div class="line-col"><div class="line-head"><span class="chipc nymph"></span>Nymph</div><div class="flap" id="flap-nymph"></div></div>
+      <div class="line-col"><div class="line-head"><span class="chipc schwabing"></span>Schwabing</div><div class="flap" id="flap-schwabing"></div></div>
+    </div>
+    <div class="body next"><h3>Next 4</h3><div id="nextList"></div></div>
+  </section>
+
+  <!-- 4. ALL SCHEDULES -->
+  <section>
+    <div class="sec-head">
+      <span class="step">4</span><h2>All timetables</h2>
+      <span class="hint">Switch season, use a plan today, or rename it</span>
+    </div>
+    <div class="body">
+      <div class="row">
+        <div>
+          <label class="lbl">Season</label>
+          <div class="seg"><button type="button" class="btn" data-s="summer">Summer</button><button type="button" class="btn" data-s="winter">Winter</button></div>
+        </div>
+        <div>
+          <label class="lbl" for="filterN">Show plans for</label>
+          <select id="filterN">
+            <option value="all">All plans</option><option value="4">4 drivers</option><option value="5">5 drivers</option>
+            <option value="6">6 drivers</option><option value="7">7 drivers</option><option value="8">8 drivers</option>
+          </select>
+        </div>
+      </div>
+      <div id="schedules"></div>
+    </div>
+  </section>
+
+  <footer>Open source · single file · runs offline · host free on GitHub Pages / Netlify / Cloudflare Pages</footer>
+</div>
+
+<script>
+/* ================= DATA =================
+   Each entry is [startTime, driverSlot]. A slot stays on its line until the next entry on that line. */
+const PLANS = {
+  p4:{label:"4 drivers", n:4,
+    city:[["10:00",2],["10:30",3],["11:00",1],["11:30",3],["12:00",4],["12:30",3],["13:00",1],["13:30",2],["14:00",4],["14:30",2],["15:00",3],["15:30",1],["16:00",3]],
+    nymph:[["10:00",1],["11:00",2],["12:00",1],["13:00",4],["14:00",3],["15:00",4],["16:00",2]],
+    schwabing:[["10:30",4],["12:30",2],["14:30",1],["16:30",4]]},
+  p5summer:{label:"5 drivers · Sommer", n:5,
+    city:[["10:00",1],["10:30",3],["11:00",5],["11:30",2],["12:00",4],["12:30",1],["13:00",3],["13:30",5],["14:00",2],["14:30",4],["15:00",1],["15:30",3],["16:00",5],["16:30",2],["17:00",4]],
+    nymph:[["10:00",2],["11:00",1],["12:00",5],["13:00",4],["14:00",3],["15:00",2],["16:00",1],["17:00",5]],
+    schwabing:[["10:30",4],["11:30",3],["12:30",2],["13:30",1],["14:30",5],["15:30",4],["16:30",3]]},
+  p5winter:{label:"5 drivers · Winter", n:5,
+    city:[["10:00",1],["10:30",3],["11:00",5],["11:30",2],["12:00",3],["12:30",5],["13:00",2],["13:30",4],["14:00",5],["14:30",2],["15:00",4],["15:30",1],["16:00",2],["16:30",4]],
+    nymph:[["10:00",2],["11:00",1],["12:00",4],["13:00",3],["14:00",1],["15:00",5],["16:00",3]],
+    schwabing:[["10:30",4],["12:30",1],["14:30",3],["16:30",5]]},
+  p5runde:{label:"5 drivers · 5 Runde", n:5,
+    city:[["09:30",1],["10:00",2],["10:30",5],["11:00",1],["11:30",3],["12:00",4],["12:30",2],["13:00",3],["13:30",5],["14:00",1],["14:30",4],["15:00",5],["15:30",2],["16:00",3]],
+    nymph:[["10:00",3],["11:00",2],["12:00",5],["13:00",4],["14:00",2],["15:00",1],["16:00",4]],
+    schwabing:[["10:30",4],["12:30",1],["14:30",3],["16:30",5]]},
+  p6summer:{label:"6 drivers · 2025 Sommer", n:6,
+    city:[["10:00",1],["10:30",3],["11:00",6],["11:30",2],["12:00",4],["12:30",6],["13:00",3],["13:30",5],["14:00",2],["14:30",4],["15:00",1],["15:30",3],["16:00",6],["16:30",4],["17:00",5]],
+    nymph:[["10:00",2],["10:30",4],["11:00",1],["11:30",3],["12:00",5],["12:30",1],["13:00",4],["13:30",6],["14:00",3],["14:30",5],["15:00",2],["15:30",4],["16:00",1],["16:30",3],["17:00",6]],
+    schwabing:[["10:30",5],["12:30",2],["13:30",1],["14:30",6],["15:30",5],["16:30",2]]},
+  p6two:{label:"6 drivers · City + Nymph only", n:6,
+    city:[["09:40",1],["10:00",2],["10:20",4],["10:40",6],["11:00",1],["11:20",3],["11:40",5],["12:00",6],["12:20",2],["12:40",4],["13:00",5],["13:20",1],["13:40",3],["14:00",4],["14:20",6],["14:40",2],["15:00",3],["15:20",5],["15:40",1],["16:00",2],["16:20",4],["16:40",6]],
+    nymph:[["10:00",3],["10:30",5],["11:00",2],["11:30",4],["12:00",1],["12:30",3],["13:00",6],["13:30",2],["14:00",5],["14:30",1],["15:00",4],["15:30",6],["16:00",3],["16:30",5]],
+    schwabing:[]},
+  p6winter:{label:"6 drivers · Winter", n:6,
+    city:[["09:30",1],["10:00",2],["10:20",4],["10:40",1],["11:00",3],["11:30",4],["12:00",2],["12:30",5],["13:00",1],["13:30",2],["14:00",6],["14:30",3],["15:00",5],["15:30",6],["16:00",4],["16:30",5]],
+    nymph:[["10:00",3],["10:30",5],["11:00",2],["11:30",6],["12:00",1],["12:30",4],["13:00",6],["13:30",3],["14:00",5],["14:30",2],["15:00",4],["15:30",1],["16:00",3]],
+    schwabing:[["10:30",6],["11:30",5],["12:30",3],["13:30",4],["14:30",1],["15:30",2],["16:30",6]]},
+  p7:{label:"7 drivers · 2024", n:7,
+    city:[["10:00",1],["10:20",3],["10:40",6],["11:00",7],["11:20",2],["11:40",5],["12:00",6],["12:20",1],["12:40",4],["13:00",5],["13:20",7],["13:40",3],["14:00",4],["14:20",6],["14:40",2],["15:00",3],["15:30",5],["16:00",1],["16:30",3],["17:00",6]],
+    nymph:[["10:00",2],["10:30",4],["11:00",1],["11:30",3],["12:00",7],["12:30",2],["13:00",6],["13:30",1],["14:00",5],["14:30",7],["15:00",4],["15:30",6],["16:00",2],["16:30",4],["17:00",7]],
+    schwabing:[["10:30",5],["11:30",4],["12:30",3],["13:30",2],["14:30",1],["15:30",7],["16:30",5]]},
+  p7winter:{label:"7 drivers · Winter (5 Fahrten)", n:7,
+    city:[["09:40",1],["10:00",2],["10:30",4],["11:00",7],["11:30",2],["12:00",5],["12:30",7],["13:00",3],["13:30",5],["14:00",1],["14:30",3],["15:00",6],["15:30",1],["16:00",4],["16:30",6]],
+    nymph:[["10:00",3],["10:30",5],["11:00",1],["11:30",3],["12:00",6],["12:30",1],["13:00",4],["13:30",6],["14:00",2],["14:30",4],["15:00",7],["15:30",2],["16:00",5]],
+    schwabing:[["10:30",6],["11:30",4],["12:30",2],["13:30",7],["14:30",5],["15:30",3],["16:30",7]]},
+  p8:{label:"8 drivers · 2024", n:8,
+    city:[["09:40",1],["10:00",2],["10:15",4],["10:30",5],["10:45",8],["11:00",1],["11:15",3],["11:30",4],["11:45",7],["12:00",8],["12:15",2],["12:30",3],["12:45",6],["13:00",7],["13:20",1],["13:40",4],["14:00",5],["14:20",7],["14:40",2],["15:00",3],["15:20",5],["15:40",8],["16:00",1],["16:20",3],["16:40",6],["17:00",7]],
+    nymph:[["10:00",3],["10:30",6],["11:00",2],["11:30",5],["12:00",1],["12:30",4],["13:00",8],["13:30",2],["14:00",6],["14:30",8],["15:00",4],["15:30",6],["16:00",2],["16:30",4],["17:00",8]],
+    schwabing:[["10:30",7],["11:30",6],["12:30",5],["13:30",3],["14:30",1],["15:30",7],["16:30",5]]},
+  p8s:{label:"8 drivers · mit Sonderfahrt", n:8,
+    city:[["10:00",1],["10:20",3],["10:40",6],["11:00",8],["11:20",3],["11:40",6],["12:00",7],["12:20",3],["12:40",6],["13:00",8],["13:20",3],["13:40",6],["14:00",7],["14:20",1],["14:40",4],["15:00",5],["15:30",7],["16:00",2],["16:30",4],["17:00",8]],
+    nymph:[["10:00",2],["10:30",4],["11:00",7],["11:30",5],["12:00",8],["12:30",4],["13:00",7],["13:30",5],["14:00",8],["14:30",2],["15:00",6],["15:30",1],["16:00",3],["16:30",5],["17:00",7]],
+    schwabing:[["10:30",5],["11:30",4],["12:30",5],["13:30",4],["14:30",3],["15:30",8],["16:30",6]],
+    sonder:[["11:00","1 und 2"]]}
+};
+const LINES = [["city","City","c"],["nymph","Nymph","n"],["schwabing","Schwabing","s"]];
+const LINE_LABEL = {city:"City",nymph:"Nymph",schwabing:"Schwabing",sonder:"Sonderfahrt"};
+const SEASON = {p4:"winter",p5summer:"summer",p5winter:"winter",p5runde:"winter",p6summer:"summer",p6two:"winter",p6winter:"winter",p7:"summer",p7winter:"winter",p8:"summer",p8s:"summer"};
+const DEFAULT_DRIVERS = ["Alex","Anton","Dario","Dino J","Dino M","Goran","Mirsad","Ozkan","Raimund","Romeo","Willi","Yetlir"];
+
+/* ================= STATE ================= */
+let state = { drivers: DEFAULT_DRIVERS.slice(), selected: [], planKey: "p5runde", assign: {}, filter: "all", planNames: {}, season: "winter" };
+function label(k){ return (state.planNames && state.planNames[k]) || PLANS[k].label; }
+function load(){ try{ const r=localStorage.getItem("fahrplanBoardV2"); if(r) state=Object.assign(state,JSON.parse(r)); }catch(e){} }
+function save(){ try{ localStorage.setItem("fahrplanBoardV2", JSON.stringify(state)); }catch(e){} }
+if(!PLANS[state.planKey]) state.planKey="p5runde";
+
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function toMin(t){ const [h,m]=t.split(":").map(Number); return h*60+m; }
+
+/* ================= ASSIGNMENT LOGIC ================= */
+function reconcile(planKey){
+  const n = PLANS[planKey].n;
+  const a = state.assign[planKey] = state.assign[planKey] || {};
+  const used = new Set();
+  for(let i=1;i<=n;i++){
+    if(a[i] && state.selected.includes(a[i]) && !used.has(a[i])) used.add(a[i]); else a[i]="";
+  }
+  for(let i=1;i<=n;i++){
+    if(!a[i]){ const nx = state.selected.find(d=>!used.has(d)); if(nx){ a[i]=nx; used.add(nx); } }
+  }
+}
+function autoFill(planKey){
+  const n=PLANS[planKey].n, a=state.assign[planKey]={};
+  for(let i=1;i<=n;i++) a[i]=state.selected[i-1]||"";
+}
+function nameFor(planKey,slot){ const a=state.assign[planKey]||{}; return a[slot] || ("Driver "+slot); }
+function namesFor(planKey,str){ return String(str).split(/\s*und\s*/i).map(s=>{ const n=parseInt(s,10); return isNaN(n)?s:nameFor(planKey,n); }).join(" & "); }
+
+/* ================= 1. DRIVERS ================= */
+function renderDrivers(){
+  const box=$("chips"); box.innerHTML="";
+  state.drivers.forEach(name=>{
+    const on = state.selected.includes(name);
+    const el=document.createElement("label"); el.className="chip"+(on?" on":"");
+    el.innerHTML='<input type="checkbox" '+(on?"checked":"")+'><span class="nm">'+esc(name)+'</span>'+
+      '<button class="del" type="button" title="Remove this name" aria-label="Remove '+esc(name)+'">×</button>';
+    el.querySelector("input").addEventListener("change",e=>{
+      if(e.target.checked){ if(!state.selected.includes(name)) state.selected.push(name); }
+      else state.selected = state.selected.filter(d=>d!==name);
+      onSelectionChange();
+    });
+    const del=el.querySelector(".del");
+    if(del) del.addEventListener("click",e=>{ e.preventDefault(); state.drivers=state.drivers.filter(d=>d!==name); state.selected=state.selected.filter(d=>d!==name); onSelectionChange(); });
+    box.appendChild(el);
+  });
+  $("count").innerHTML="Working today: <b>"+state.selected.length+"</b>";
+}
+$("addBtn").addEventListener("click",()=>{
+  const v=$("newName").value.trim(); if(!v) return;
+  if(!state.drivers.some(d=>d.toLowerCase()===v.toLowerCase())) state.drivers.push(v);
+  const real=state.drivers.find(d=>d.toLowerCase()===v.toLowerCase());
+  if(!state.selected.includes(real)) state.selected.push(real);
+  $("newName").value=""; onSelectionChange();
+});
+$("newName").addEventListener("keydown",e=>{ if(e.key==="Enter") $("addBtn").click(); });
+$("clearBtn").addEventListener("click",()=>{ state.selected=[]; onSelectionChange(); });
+
+function onSelectionChange(){
+  reconcile(state.planKey); save();
+  renderDrivers(); renderPlanStatus(); renderAssign(); renderSchedules(); tick();
+}
+
+/* ================= 2. PLAN ================= */
+const planSelect=$("planSelect");
+function renderPlanOptions(){
+  planSelect.innerHTML="";
+  Object.keys(PLANS).filter(k=>SEASON[k]===state.season).forEach(k=>{ const o=document.createElement("option"); o.value=k; o.textContent=label(k); planSelect.appendChild(o); });
+  planSelect.value=state.planKey;
+}
+planSelect.addEventListener("change",()=>setPlan(planSelect.value));
+function setPlan(k){
+  state.planKey=k; planSelect.value=k; reconcile(k); save();
+  renderPlanStatus(); renderAssign(); renderSchedules(); tick();
+}
+$("autoBtn").addEventListener("click",()=>{ autoFill(state.planKey); save(); renderAssign(); renderSchedules(); tick(); });
+
+function renderPlanStatus(){
+  const n=PLANS[state.planKey].n, s=state.selected.length, el=$("status");
+  if(s===n){ el.className="status ok"; el.textContent="✓ "+s+" drivers ticked — matches this plan"; }
+  else if(s<n){ el.className="status warn"; el.textContent="Plan needs "+n+" drivers — you ticked "+s+" ("+(n-s)+" missing)"; }
+  else { el.className="status warn"; el.textContent="Plan needs "+n+" drivers — you ticked "+s+" ("+(s-n)+" too many)"; }
+  $("planLabel").textContent=label(state.planKey);
+}
+function renderAssign(){
+  const box=$("assign"); box.innerHTML="";
+  const n=PLANS[state.planKey].n, a=state.assign[state.planKey]||{};
+  for(let i=1;i<=n;i++){
+    const w=document.createElement("div");
+    w.innerHTML='<div class="slot-label"><span class="slot-num">'+i+'</span>Slot '+i+'</div>';
+    const sel=document.createElement("select");
+    const blank=document.createElement("option"); blank.value=""; blank.textContent="— none —"; sel.appendChild(blank);
+    state.selected.forEach(d=>{ const o=document.createElement("option"); o.value=d; o.textContent=d; if(a[i]===d) o.selected=true; sel.appendChild(o); });
+    sel.addEventListener("change",()=>{ state.assign[state.planKey][i]=sel.value; save(); renderSchedules(); tick(); });
+    w.appendChild(sel); box.appendChild(w);
+  }
+}
+
+/* ================= 3. LIVE BOARD ================= */
+function events(planKey){
+  const p=PLANS[planKey], ev=[];
+  LINES.forEach(([k])=>(p[k]||[]).forEach(([t,s])=>ev.push({line:k,time:t,mins:toMin(t),slot:s})));
+  (p.sonder||[]).forEach(([t,s])=>ev.push({line:"sonder",time:t,mins:toMin(t),slot:s}));
+  return ev.sort((a,b)=>a.mins-b.mins);
+}
+function active(planKey,now){
+  const p=PLANS[planKey], out={};
+  LINES.forEach(([k])=>{
+    const list=p[k]||[]; let idx=-1;
+    list.forEach((e,i)=>{ if(toMin(e[0])<=now) idx=i; });
+    out[k]= idx<0 ? null : {time:list[idx][0], slot:list[idx][1], until:list[idx+1]?list[idx+1][0]:null};
+  });
+  return out;
+}
+function renderFlap(line,a){
+  const el=$("flap-"+line);
+  if(!(PLANS[state.planKey][line]||[]).length){ el.innerHTML='<div class="s">Not in this plan</div><div class="d idle">—</div>'; return; }
+  if(!a){ el.innerHTML='<div class="s">Not started</div><div class="d idle">waiting for first slot</div>'; return; }
+  el.innerHTML='<div class="s">Active since '+a.time+'</div><div class="d">'+esc(nameFor(state.planKey,a.slot))+' <span style="color:var(--muted-2);font-size:13px">('+a.slot+')</span></div>'+
+    '<div class="u">'+(a.until?"until "+a.until:"last slot today")+'</div>';
+}
+function renderSonder(){
+  const p=PLANS[state.planKey], w=$("sonderWrap");
+  w.innerHTML=(p.sonder||[]).map(([t,s])=>'<div class="sonder-banner">⚠ '+t+' — Sonderfahrt: '+esc(namesFor(state.planKey,s))+'</div>').join("");
+}
+function tick(){
+  const d=new Date();
+  $("clock").innerHTML=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")+":"+String(d.getSeconds()).padStart(2,"0")+
+    '<span>'+d.toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"2-digit"})+'</span>';
+  const now=d.getHours()*60+d.getMinutes(), act=active(state.planKey,now);
+  LINES.forEach(([k])=>renderFlap(k,act[k]));
+  renderSonder();
+  const nx=events(state.planKey).filter(e=>e.mins>now).slice(0,4), list=$("nextList");
+  if(!nx.length){ list.innerHTML='<div class="empty">No more entries in this plan today.</div>'; return; }
+  list.innerHTML=nx.map((e,i)=>{
+    const who = e.line==="sonder" ? namesFor(state.planKey,e.slot) : nameFor(state.planKey,e.slot)+" ("+e.slot+")";
+    return '<div class="nrow '+e.line+'"><div class="i">#'+(i+1)+'</div><div class="t">'+e.time+'</div><div class="l">'+LINE_LABEL[e.line]+'</div><div class="dr">'+esc(who)+'</div></div>';
+  }).join("");
+}
+
+/* ================= 4. ALL SCHEDULES ================= */
+function renderSchedules(){
+  const box=$("schedules"); box.innerHTML="";
+  Object.entries(PLANS).filter(([k,p])=>SEASON[k]===state.season && (state.filter==="all"||String(p.n)===state.filter)).forEach(([k,p])=>{
+    const selected = k===state.planKey;
+    const times=[...new Set(events(k).map(e=>e.time))].sort((a,b)=>toMin(a)-toMin(b));
+    const cell=(line,t)=>{
+      const e=(p[line]||[]).find(x=>x[0]===t); if(!e) return "";
+      return selected ? esc(nameFor(k,e[1]))+" <span style='opacity:.5'>("+e[1]+")</span>" : String(e[1]);
+    };
+    const hasSonder=(p.sonder||[]).length;
+    let rows=times.map(t=>{
+      const so=(p.sonder||[]).find(x=>x[0]===t);
+      return '<tr><td class="time">'+t+'</td><td class="c">'+cell("city",t)+'</td><td class="n">'+cell("nymph",t)+'</td><td class="s">'+cell("schwabing",t)+'</td>'+
+        (hasSonder?'<td class="x">'+(so?(selected?esc(namesFor(k,so[1])):esc(so[1])):"")+'</td>':"")+'</tr>';
+    }).join("");
+    const d=document.createElement("details"); d.className="plan"; if(selected) d.open=true;
+    d.innerHTML='<summary><span class="pname">'+esc(label(k))+'</span> <span class="tag">'+p.n+' drivers</span>'+(selected?' <span class="tag sel">in use today</span>':"")+
+      '<button class="btn rbtn" type="button">Rename</button><button class="btn pbtn" type="button">'+(selected?"Selected":"Use this plan")+'</button></summary>'+
+      '<div class="tablewrap"><table><thead><tr><th>Time</th><th>City</th><th>Nymph</th><th>Schwabing</th>'+(hasSonder?'<th>Sonderfahrt</th>':"")+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+    d.querySelector(".pbtn").addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation(); setPlan(k); window.scrollTo({top:$("planSelect").getBoundingClientRect().top+window.scrollY-80,behavior:"smooth"}); });
+    d.querySelector(".rbtn").addEventListener("click",e=>{
+      e.preventDefault(); e.stopPropagation();
+      const span=d.querySelector(".pname"); if(!span) return;
+      const inp=document.createElement("input"); inp.type="text"; inp.maxLength=40; inp.value=label(k); inp.className="pedit"; inp.setAttribute("aria-label","Plan name");
+      span.replaceWith(inp); inp.focus(); inp.select();
+      let done=false;
+      const finish=keep=>{
+        if(done) return; done=true;
+        if(keep){ const v=inp.value.trim(); if(!v || v===p.label) delete state.planNames[k]; else state.planNames[k]=v; save(); }
+        renderPlanOptions(); renderPlanStatus(); renderSchedules();
+      };
+      inp.addEventListener("click",ev=>ev.preventDefault());
+      inp.addEventListener("keyup",ev=>{ if(ev.key===" ") ev.preventDefault(); });
+      inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); finish(true); } else if(ev.key==="Escape"){ finish(false); } });
+      inp.addEventListener("blur",()=>finish(true));
+    });
+    box.appendChild(d);
+  });
+  if(!box.children.length) box.innerHTML='<div class="empty">No '+state.season+' plan for '+esc(state.filter)+' drivers.</div>';
+}
+$("filterN").addEventListener("change",()=>{ state.filter=$("filterN").value; save(); renderSchedules(); });
+
+/* ================= INIT ================= */
+load();
+state.drivers=state.drivers.filter(d=>d!=="Lekso"); state.selected=state.selected.filter(d=>d!=="Lekso");
+if(!PLANS[state.planKey]) state.planKey="p5runde";
+if(!state.planNames) state.planNames={};
+state.season=SEASON[state.planKey];
+function renderSeason(){ document.querySelectorAll(".seg .btn").forEach(b=>{ const on=b.dataset.s===state.season; b.classList.toggle("on",on); b.setAttribute("aria-pressed",on); }); }
+function setSeason(s){
+  state.season=s; let k=state.planKey;
+  if(SEASON[k]!==s){ const ks=Object.keys(PLANS).filter(x=>SEASON[x]===s); k=ks.find(x=>PLANS[x].n===state.selected.length)||ks[0]; }
+  state.planKey=k; renderSeason(); renderPlanOptions(); setPlan(k);
+}
+document.querySelectorAll(".seg .btn").forEach(b=>b.addEventListener("click",()=>setSeason(b.dataset.s)));
+renderSeason();
+renderPlanOptions(); $("filterN").value=state.filter||"all";
+reconcile(state.planKey);
+renderDrivers(); renderPlanStatus(); renderAssign(); renderSchedules(); tick();
+setInterval(tick,1000);
+</script>
+
+</body>
+</html>
